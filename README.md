@@ -34,7 +34,7 @@ Available Commands:
 ```
 
 ### `config`
-The `config` command allows the user to validate the current configuration file in use and its contents (example uses the account `ubuntu` with a ``):
+The `config` command allows the user to validate the current configuration file in use and its contents:
 
 ```
 $ kubectl job-manager config
