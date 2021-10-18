@@ -58,6 +58,7 @@ $ kubectl job-manager version
 ```
 
 ## `create`
+The `create` command allows to quickly create jobs in the cluster using specialized hardware available as a device.
 
 ```
 $ kubectl job-manager create
@@ -98,9 +99,29 @@ Usage:
   kubectl job-manager create -j <jobname> -n <namespace> -i <image> -c <commmand> -d <device> [--ttl <n>] [--completions <n>] [--backoff-limit <n>] [--dry-run] [--debug]
 ```
 
-Example:
+It has 5 mandatory arguments:
+- `-j` or `--job` to set the job name.
+- `-n` or `--namespace` to set the namespace to create the job on.
+- `-i` or `--image` to set the image to be run on the job.
+- `-c` or `--command` to set the command to be executed on the image.
+- `-d` or `--device` to set a device resource request and limit for the job.
+
+Example job which deploys a pod using the `busybox` image, with the `dummy/dummyDev` device requested, and waits 10 minutes before terminating:
 ```
-$ kubectl job-manager create -j dummyjob -n default -i busybox -c '["sleep", "600"]' -d 'dummy/dummyDev'
+$ kubectl job-manager create -j dummyjob -n default -i busybox -c '["sleep", "600"]' -d dummy/dummyDev
+job.batch/dummyjob created
+```
+
+There are several optional parameters can be used as well:
+- `--ttl` to set the time in seconds before the job is terminated. Defaults to 2 hours.
+- `--completions` to set the number of times the job must run. Defaults to 1.
+- `--backoff-limit` to set the number of times the job can backoff. Defaults to 1.
+- `--dry-run` to not send the create request to the cluster. The request is also printed to STDOUT in yaml format.
+- `--debug` to set the job to run in debug mode, keeping it alive for the duration in seconds and preventing restarts.
+
+Example job which deploys a pod using the `busybox` image, with the `dummy/dummyDev` device requested, runs for 10 seconds and then remains on the cluster for 30 minutes:
+```
+$ kubectl job-manager create -j dummyjob -n default -i busybox -c '["sleep", "10"]' -d dummy/dummyDev --debug 1800
 job.batch/dummyjob created
 ```
 
@@ -138,6 +159,7 @@ The `list devices` command allows to see the list of all managed devices current
 ```
 $ kubectl job-manager create -j dummyjob -n default -i busybox -c '["sleep", "600"]' -d dummy/dummyDev
 job.batch/dummyjob created
+
 $ kubectl job-manager list devices
                     DEVICE | NODE           | NAMESPACE         | POD
             dummy/dummyDev | minikube       | default           | dummyjob-fnp5f
@@ -145,3 +167,45 @@ $ kubectl job-manager list devices
 
 ### `list jobs`
 The `list jobs` command allows to see the list of all jobs that are using one of the managed devices, including the namespace and the current time to live in seconds for the job to be automatically terminated. For a device to appear in the list, it must exist in the plugin configuration file.
+
+```
+$ kubectl job-manager create -j dummyjob -n default -i busybox -c '["sleep", "600"]' -d dummy/dummyDev
+job.batch/dummyjob created
+
+$ kubectl job-manager list jobs
+                    DEVICE | JOB            | NAMESPACE         | TIME_TO_LIVE (Seconds)
+            dummy/dummyDev | dummyjob       | default           | 7089
+```
+Note that while the job is in the `Running` state, the `TIME_TO_LIVE` field indicates the time the job has left to terminate. If the job is running in `debug` mode, once the job enters the `Completed` state the `TIME_TO_LIVE` is updated to show the time the job has left until it is deleted.
+
+## `delete`
+The `delete` command deletes a job runnning on the cluster.
+
+```
+$ kubectl job-manager delete
+Delete an existing job.
+
+Examples:
+  # Delete the job named my-job.
+  kubectl job-manager delete -j my-job
+
+Options:
+  -j, --job <jobname>     The job name to delete.
+
+Usage:
+  kubectl job-manager delete -j <jobname>
+```
+
+Example:
+
+```
+$ kubectl job-manager list jobs
+                    DEVICE | JOB            | NAMESPACE         | TIME_TO_LIVE (Seconds)
+            dummy/dummyDev | dummyjob       | default           | 7196
+
+$ kubectl job-manager delete -j dummyjob
+job.batch "dummyjob" deleted
+
+$ kubectl job-manager list jobs
+                    DEVICE | JOB            | NAMESPACE         | TIME_TO_LIVE (Seconds)
+```
