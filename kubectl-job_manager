@@ -318,14 +318,14 @@ exit 0
 
 ## Main Script
 
-# Handle the cersion command
+# Handle the version command
 if [[ "$1" == "version" ]]
 then
     print_version
 fi
 
 
-# Handle the cersion command
+# Handle the config command
 if [[ "$1" == "config" ]]
 then
     print_config
