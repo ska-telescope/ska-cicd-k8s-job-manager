@@ -204,7 +204,7 @@ exit 0
 
 # Create a non-scheduled job function
 function create_job {
-# shellcheck disable=SC2248  # Optinal check, fixing breaks the kubectl create command
+# shellcheck disable=SC2248  # Optional check, fixing breaks the kubectl create command
 cat <<EOF | kubectl create ${DRY_RUN_FLAG} ${OUTPUT_FLAG} -f - 
 apiVersion: batch/v1
 kind: Job
