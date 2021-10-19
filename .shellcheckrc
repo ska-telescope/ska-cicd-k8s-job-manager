@@ -1,0 +1,7 @@
+# Enable all optional checks
+enable=all
+
+# Disable rationable: 
+#  - SC2059: Checks for variables in the printf format parameter. 
+#            False positive if the format itself is given as a variable (legitimate use-case).
+disable=SC2059
