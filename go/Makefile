@@ -20,3 +20,6 @@ requirements:
 
 build: requirements
 	go build -o kubectl-job_manager *.go
+
+clean:
+	@rm kubectl-job_manager
