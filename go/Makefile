@@ -11,6 +11,10 @@ install: build
 	@echo "kubectl job-manager plugin installed."
 	@echo "Ensure ${INSTALL_LOCATION} is in your system's PATH."
 
+uninstall:
+	@rm -rf ${INSTALL_LOCATION}/kubectl-job_manager
+	@echo "kubectl job-manager plugin uninstalled."
+
 requirements:
 	go mod tidy
 
