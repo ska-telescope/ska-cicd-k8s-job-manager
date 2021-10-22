@@ -12,7 +12,7 @@ install: build
 	@echo "Ensure ${INSTALL_LOCATION} is in your system's PATH."
 
 uninstall:
-	@rm -rf ${INSTALL_LOCATION}/kubectl-job_manager
+	@rm ${INSTALL_LOCATION}/kubectl-job_manager
 	@echo "kubectl job-manager plugin uninstalled."
 
 requirements:
