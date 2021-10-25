@@ -1,5 +1,6 @@
 stages:
   - lint
+  - build
 
 lint:
   stage: lint
@@ -11,6 +12,24 @@ lint:
     - docker-executor
   script:
     - shellcheck kubectl-job_manager
+  artifacts:
+    when: always
+    paths:
+      - build
+
+build-go:
+  stage: build
+  image: alpine:3.14.2
+  before_script:
+    - apk update && apk add --no-cache golang
+  tags:
+    - docker-executor
+  script:
+    - cd go/
+    - go mod tidy
+    - go build -o kubectl-job_manager *.go
+    - chmod +x kubectl-job_manager
+    - cp kubectl-job_manager ../build
   artifacts:
     when: always
     paths:
