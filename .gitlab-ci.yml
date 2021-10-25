@@ -19,14 +19,12 @@ lint:
 
 build-go:
   stage: build
-  image: alpine:3.14.2
-  before_script:
-    - apk update && apk add --no-cache go
+  image: golang:alpine3.14
   tags:
     - docker-executor
   script:
     - cd go/
-    - go mod tidy -e
+    - go mod tidy
     - go build -o kubectl-job_manager *.go
     - chmod +x kubectl-job_manager
     - cp kubectl-job_manager ../build
