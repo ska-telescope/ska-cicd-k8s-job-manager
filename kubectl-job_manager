@@ -1,0 +1,388 @@
+#!/bin/bash
+## Init
+
+# Setup temporary files and traps
+trap 'rm -f "$TMPFILE"' EXIT
+TMPFILE=$(mktemp)
+
+
+## Variables
+
+# Variable defaults
+VERSION="0.1.0"
+NAMESPACE=
+NAME=
+BACKOFF_LIMIT="1"
+COMPLETIONS="1"
+IMAGE=
+COMMAND=
+RESTART_POLICY="OnFailure"
+DEVICE=
+DRY_RUN_FLAG=
+OUTPUT_FLAG=
+TTL="7200"
+TTL_AFTER_FINISHED="0"
+CONFIG=
+
+
+# Search common config locations for the configuration file
+if [[ -f "${HOME}/.kube/job-manager.conf" ]] ; then
+    CONFIG="${HOME}/.kube/job-manager.conf"
+elif [[ -f "/etc/kubernetes/job-manager.conf" ]] ; then
+    CONFIG="/etc/kubernetes/job-manager.conf"
+fi
+
+
+# Parameter Parsing into Variables
+i=$(($#-1))
+while [[ ${i} -ge 0 ]] ; do
+    if [[ ${BASH_ARGV[${i}]} == "--namespace" || ${BASH_ARGV[${i}]} == "-n" ]] ; then
+        i=$((i-1))
+        NAMESPACE=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--dry-run" ]] ; then
+        DRY_RUN_FLAG="--dry-run=client"
+        OUTPUT_FLAG="--output=yaml"
+    elif [[ ${BASH_ARGV[${i}]} == "--backoff-limit" ]] ; then
+        i=$((i-1))
+        BACKOFF_LIMIT=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--completions" ]] ; then
+        i=$((i-1))
+        COMPLETIONS=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--job" || ${BASH_ARGV[${i}]} == "-j" ]] ; then
+        i=$((i-1))
+        NAME=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--ttl" ]] ; then
+        i=$((i-1))
+        TTL=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--image" || ${BASH_ARGV[${i}]} == "-i" ]] ; then
+        i=$((i-1))
+        IMAGE=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--device" || ${BASH_ARGV[${i}]} == "-d" ]] ; then
+        i=$((i-1))
+        DEVICE=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--debug" ]] ; then
+        i=$((i-1))
+        RESTART_POLICY="Never"
+        TTL_AFTER_FINISHED=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == "--command" || ${BASH_ARGV[${i}]} == "-c" ]] ; then
+        i=$((i-1))
+        COMMAND=${BASH_ARGV[${i}]}
+    elif [[ ${BASH_ARGV[${i}]} == -* ]] ; then
+        echo "Unknown option '${BASH_ARGV[${i}]}'."
+        exit 2
+    fi
+
+    i=$((i-1))
+done
+
+
+## Help functions
+
+# Print the plugin version function
+function print_version {
+echo "${VERSION}"
+exit 0
+}
+
+
+# Print the plugin config function
+function print_config {
+if [[ -z ${CONFIG} ]] ; then
+    echo "No configuration file found."
+else
+    echo "Loaded configuration file: ${CONFIG}"
+    echo "---"
+    cat  "${CONFIG}"
+    echo "---"
+fi
+echo
+echo "Configuration file location priority:"
+echo "  - ${HOME}/.kube/job-manager.conf"
+echo "  - /etc/kubernetes/job-manager.conf"
+exit 0
+}
+
+
+# Print the list command help function
+function print_list_help {
+echo "List information about jobs and devices."
+echo 
+echo "IMPORTANT:"
+echo "  A configuration file with the list of managed devices must be present to list jobs and devices."
+echo "  See the \`kubectl job-manager config\` command for more information."
+echo
+echo "Examples:"
+echo "  # List all devices currently in use."
+echo "  kubectl job-manager list devices"
+echo
+echo "  # List all jobs currently using a device."
+echo "  kubectl job-manager list jobs"
+echo
+echo "Available Commands:"
+echo "  devices     List all devices currently in use."
+echo "  jobs        List all jobs currently using a device."
+echo
+echo "Usage:"
+echo "  kubectl job-manager list <command>"
+exit 0
+}
+
+
+# Print the create command help function
+function print_create_help {
+echo "Create and run a job with associated devices."
+echo
+echo "Examples:"
+echo "  # Run a job using a device on the default namespace."
+echo "  kubectl job-manager create -j my-job -n default -d xilinx.com/fpga -i busybox -c '[\"echo\", \"Hello!\"]'"
+echo
+echo "  # Print the request of the job using a device on the default namespace."
+echo "  kubectl job-manager create -j my-job -n default -d xilinx.com/fpga -i busybox -c '[\"echo\", \"Hello!\"]' --dry-run"
+echo
+echo "  # Run a job using a device on the default namespace for debugging purposes."
+echo "  kubectl job-manager create -j my-job -n default -d xilinx.com/fpga -i busybox -c '[\"echo\", \"Hello!\"]' --debug"
+echo
+echo "  # Run a job that should be deleted after 10 minutes."
+echo "  kubectl job-manager create -j my-job -n default -d xilinx.com/fpga -i busybox -c '[\"echo\", \"Hello!\"]' --ttl 600"
+echo
+echo "  # Run a job that is allowed to backoff 3 times."
+echo "  kubectl job-manager create -j my-job -n default -d xilinx.com/fpga -i busybox -c '[\"echo\", \"Hello!\"]' --backoff-limit 3"
+echo
+echo "  # Run a job that must complete 2 times."
+echo "  kubectl job-manager create -j my-job -n default -d xilinx.com/fpga -i busybox -c '[\"echo\", \"Hello!\"]' --completions 2"
+echo
+echo "Options:"
+echo "  -j, --job <jobname>             Set the job name."
+echo "  -n, --namespace <namespace>     Set the namespace to create the job on."
+echo "  -i, --image <image>             Set the image to be run on the job."
+echo "  -c, --command <command>         Set the command to be executed on the image."
+echo "  -d, --device <device>           Set a device resource request and limit for the job."
+echo "      --ttl <seconds>             Time in seconds before the job is terminated. Defaults to 7200."
+echo "      --completions <n>           Set the number of times the job must run. Defaults to 1."
+echo "      --backoff-limit <n>         Set the number of times the job can backoff. Defaults to 1."
+echo "      --dry-run                   Do not send the create request to the server and print it to stdout."
+echo "      --debug <seconds>           Sets the job to debug mode, keeping it alive for the duration in seconds and preventing restarts."
+echo
+echo "Usage:"
+echo "  kubectl job-manager create -j <jobname> -n <namespace> -i <image> -c <commmand> -d <device> [--ttl <n>] [--completions <n>] [--backoff-limit <n>] [--dry-run] [--debug]"
+exit 0
+}
+
+
+# Print the delete command help function
+function print_delete_help {
+echo "Delete an existing job."
+echo
+echo "Examples:"
+echo "  # Delete the job named my-job."
+echo "  kubectl job-manager delete -j my-job"
+echo
+echo "Options:"
+echo "  -j, --job <jobname>     The job name to delete."
+echo
+echo "Usage:"
+echo "  kubectl job-manager delete -j <jobname>"
+exit 0
+}
+
+
+# Print the generic plugin help function
+function print_help {
+echo "Kubectl job manager plugin for Kubernetes cluster."
+echo
+echo "Available Commands:"
+echo "  list        List information about jobs and devices."
+echo "  create      Create and run a job with associated devices."
+echo "  delete      Delete an existing job."
+echo "  version     Displays the plugin version."
+echo "  config      Displays currently loaded configuration file with the list of managed devices."
+exit 0
+}
+
+
+## Kubectl functions
+
+# Create a non-scheduled job function
+function create_job {
+# shellcheck disable=SC2248  # Optional check, fixing breaks the kubectl create command
+cat <<EOF | kubectl create ${DRY_RUN_FLAG} ${OUTPUT_FLAG} -f - 
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${NAME}
+  namespace: ${NAMESPACE}
+spec:
+  activeDeadlineSeconds: ${TTL}
+  ttlSecondsAfterFinished: ${TTL_AFTER_FINISHED}
+  parallelism: 1
+  completions: ${COMPLETIONS}
+  template:
+    spec:
+      containers:
+      - name: ${NAME}
+        image: ${IMAGE}
+        command: ${COMMAND}
+        resources:
+          requests:
+            ${DEVICE}: 1
+          limits:
+            ${DEVICE}: 1
+        imagePullPolicy: IfNotPresent
+      restartPolicy: ${RESTART_POLICY}
+  backoffLimit: ${BACKOFF_LIMIT}
+EOF
+exit 0
+}
+
+
+# Delete a job function
+function delete_job {
+kubectl delete jobs/"${NAME}"
+exit 0
+}
+
+
+# List jobs function
+function list_jobs {
+_ROW_FORMAT="%60.60s | %-30.30s | %-25.25s | %-s\n"
+printf "${_ROW_FORMAT}" "DEVICE" "JOB" "NAMESPACE" "TIME_TO_LIVE (Seconds)"
+# For each job
+while read -ra _JOB_FIELDS ; do
+    _NAME="${_JOB_FIELDS[0]}"
+    _NAMESPACE="${_JOB_FIELDS[1]}"
+    _TTL="${_JOB_FIELDS[2]}"
+    _TTL_AFTER_FINISHED="${_JOB_FIELDS[3]}"
+    _START_TIME="${_JOB_FIELDS[4]}"
+    _FINISH_TIME="${_JOB_FIELDS[5]}"
+
+    # If the job has finished and has a timeout after finish
+    if [[ "${_FINISH_TIME}" != "<none>" && "${_TTL_AFTER_FINISHED}" != "<none>" ]] ; then
+        # Then the job remaining time is (${_TTL_AFTER_FINISHED} - (NOW - ${_FINISH_TIME}))
+        _REMAINING_TIME=$(("${_TTL_AFTER_FINISHED}" - ($(date +%s) - $(date --date "${_FINISH_TIME}" +%s))))
+    # Otherwise, If the job has not finished and has an active timeout
+    elif [[ "${_FINISH_TIME}" == "<none>" && "${_TTL}" != "<none>" ]] ; then
+        # Then the job remaining time is (${_TTL} - (NOW - ${_START_TIME}))
+        _REMAINING_TIME=$(("${_TTL}" - ($(date +%s) - $(date --date "${_START_TIME}" +%s))))
+    # If none of the previous conditions apply
+    else
+        # Then there is no timeout set
+        _REMAINING_TIME="NoTimeoutSet"
+    fi
+
+    # If the remaining time is less than 0, then it must be terminating
+    # (could not find a way to check, status is always set to Running even when terminating)
+    if [[ "${_REMAINING_TIME}" -lt 0 ]] ; then
+        _REMAINING_TIME="Terminating..."
+    fi
+
+    # Describe the job to the temporary file
+    kubectl describe jobs "${_NAME}" -n "${_NAMESPACE}" > "${TMPFILE}"
+
+    # Search for each configured device
+    while read -r _DEVICE ; do
+        # Check if the job references the resource and print it
+        if grep -q "${_DEVICE}:\s*1" "${TMPFILE}" ; then
+            printf "${_ROW_FORMAT}" "${_DEVICE}" "${_NAME}" "${_NAMESPACE}" "${_REMAINING_TIME}"
+        fi
+    done < <(cat "${CONFIG}")
+done < <(kubectl get jobs --output=custom-columns=NAME:.metadata.name,NAMESPACE:.metadata.namespace,TTL:.spec.activeDeadlineSeconds,TTLAF:.spec.ttlSecondsAfterFinished,START:.status.startTime,FINISH:.status.completionTime --all-namespaces --no-headers)
+exit 0
+}
+
+
+# List devices function
+function list_devices {
+_ROW_FORMAT="%60.60s | %-30.30s | %-25.25s | %-s\n"
+printf "${_ROW_FORMAT}" "DEVICE" "NODE" "NAMESPACE" "POD"
+# For each node with the tpm label
+while read -r _TPM_NODE ; do
+    while read -ra _POD_FIELDS ; do
+        # Split the pod name and namespace into different variables
+        _POD="${_POD_FIELDS[0]}"
+        _NAMESPACE="${_POD_FIELDS[1]}"
+
+        # Describe the pod to the temporary file
+        kubectl describe pods "${_POD}" -n "${_NAMESPACE}" > "${TMPFILE}"
+
+        # Search for each configured device
+        while read -r _DEVICE ; do
+            # Check if the pod references the resource and print it
+            if grep -q "${_DEVICE}:\s*1" "${TMPFILE}" ; then
+                printf "${_ROW_FORMAT}" "${_DEVICE}" "${_TPM_NODE}" "${_NAMESPACE}" "${_POD}"
+            fi
+        done < <(cat "${CONFIG}")
+    done < <(kubectl get pods --field-selector=spec.nodeName="${_TPM_NODE}" --output=custom-columns=NAME:.metadata.name,NAMESPACE:.metadata.namespace --all-namespaces --no-headers)
+done < <(kubectl get nodes -l tpm==true --output=custom-columns=NAME:.metadata.name --no-headers)
+exit 0
+}
+
+
+## Main Script
+
+# Handle the version command
+if [[ "$1" == "version" ]]
+then
+    print_version
+fi
+
+
+# Handle the config command
+if [[ "$1" == "config" ]]
+then
+    print_config
+fi
+
+
+# Handle the list command
+if [[ "$1" == "list" ]] ; then
+    if [[ -z "$2" || -z "${CONFIG}" || "$2" == "--help" ]] ; then
+        print_list_help
+    elif [[ "$2" == "devices" ]] ; then
+        list_devices
+    elif [[ "$2" == "jobs" ]] ; then
+        list_jobs
+    fi
+    
+    print_list_help
+fi
+
+
+# Handle the create command
+if [[ "$1" == "create" ]] ; then
+    if [[ -z "${NAME}" || -z "${NAMESPACE}" || -z "${DEVICE}" || -z "${IMAGE}" || -z "${COMMAND}" || "$2" == "--help" ]] ; then
+        print_create_help
+    fi
+
+    # If the device passed is not in the CONFIG file, issue a warning
+    if [[ -z "${CONFIG}" ]] ; then
+        echo "WARNING: No configuration file exists with the list of managed devices. This device will not appear in the list command."
+        echo "WARNING: Please see \`kubectl job-manager config\` for more information."
+        echo "---"
+    elif ! grep -q "${DEVICE}" "${CONFIG}" ; then
+        echo "WARNING: The device is not in the configuration file. It will not appear in the list command."
+        echo "WARNING: Please see \`kubectl job-manager config\` for more information."
+        echo "---"
+    fi
+
+    create_job
+fi
+
+
+# Handle the delete command
+if [[ "$1" == "delete" ]] ; then
+    if [[ -z "$2" || -z "${NAME}" || "$2" == "--help" ]] ; then
+        print_delete_help
+    fi
+
+    delete_job
+fi
+
+
+# Handle unknown command
+if  [[ -n "$1" ]] ; then
+    echo "Unknown command '$1'."
+    exit 1
+fi
+
+# No command parsed, print help
+print_help

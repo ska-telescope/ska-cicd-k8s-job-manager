@@ -1,0 +1,23 @@
+stages:
+  - lint
+
+lint:
+  stage: lint
+  image: alpine:3.14.2
+  before_script:
+    - apk update && apk add --no-cache shellcheck
+    - mkdir -p build/reports
+  tags:
+    - docker-executor
+  script:
+    - shellcheck kubectl-job_manager
+  artifacts:
+    when: always
+    paths:
+      - build
+
+# Create Gitlab CI badges from CI metrics
+# https://developer.skao.int/en/latest/tools/continuousintegration.html#automated-collection-of-ci-health-metrics-as-part-of-the-ci-pipeline
+include:
+  - project: 'ska-telescope/templates-repository'
+    file: 'gitlab-ci/includes/post_step.yml'
