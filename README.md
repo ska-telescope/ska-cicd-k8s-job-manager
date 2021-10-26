@@ -125,6 +125,13 @@ $ kubectl job-manager create -j dummyjob -n default -i busybox -c '["sleep", "10
 job.batch/dummyjob created
 ```
 
+### Go Implementation
+Note that the Go implementation expects a slightly different syntax, in which the command is a simple string instead of the yaml definition syntax:
+
+```
+$ kubectl job-manager create -j dummyjob -n default -i busybox -c "sleep 10" -d dummy/dummyDev --debug 1800
+job.batch/dummyjob created
+```
 ## `list`
 The `list` command can be used for two purposes:
 - list all devices currently in use, through the subcommand `list devices`.
