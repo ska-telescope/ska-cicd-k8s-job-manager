@@ -1,5 +1,6 @@
 stages:
   - lint
+  - build
 
 lint:
   stage: lint
@@ -8,9 +9,25 @@ lint:
     - apk update && apk add --no-cache shellcheck
     - mkdir -p build/reports
   tags:
-    - docker-executor
+    - k8srunner
   script:
     - shellcheck kubectl-job_manager
+  artifacts:
+    when: always
+    paths:
+      - build
+
+build-go:
+  stage: build
+  image: golang:alpine3.14
+  tags:
+    - k8srunner
+  script:
+    - cd go/
+    - go mod tidy
+    - go build -o kubectl-job_manager *.go
+    - chmod +x kubectl-job_manager
+    - cp kubectl-job_manager ../build
   artifacts:
     when: always
     paths:
