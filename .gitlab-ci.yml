@@ -9,7 +9,7 @@ lint:
     - apk update && apk add --no-cache shellcheck
     - mkdir -p build/reports
   tags:
-    - docker-executor
+    - k8srunner
   script:
     - shellcheck kubectl-job_manager
   artifacts:
@@ -21,7 +21,7 @@ build-go:
   stage: build
   image: golang:alpine3.14
   tags:
-    - docker-executor
+    - k8srunner
   script:
     - cd go/
     - go mod tidy
